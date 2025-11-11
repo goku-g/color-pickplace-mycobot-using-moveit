@@ -1,0 +1,10 @@
+.vscode/
+build/
+install/
+log/
+
+archive/
+
+*.log
+*.tmp
+
