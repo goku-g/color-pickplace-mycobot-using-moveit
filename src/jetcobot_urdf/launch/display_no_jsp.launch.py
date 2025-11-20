@@ -11,7 +11,7 @@ def generate_launch_description():
 
   # This parameter has changed its meaning slightly from previous versions
   ld.add_action(DeclareLaunchArgument(name='model', default_value=default_model_path,
-                                      description='Path to robot urdf file relative to omnicar_description package'))
+                                      description='Path to robot urdf file relative to jetcobot_urdf package'))
 
   ld.add_action(IncludeLaunchDescription(
     PathJoinSubstitution([FindPackageShare('urdf_launch'), 'launch', 'display_no_jsp.launch.py']),
