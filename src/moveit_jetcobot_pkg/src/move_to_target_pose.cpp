@@ -2,14 +2,35 @@
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include <geometry_msgs/msg/pose.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
+#include <cmath>
 
 class SetTargetPosition : public rclcpp::Node
 {
 public:
+  int max_tries = 3;
+  int max_execution_tries = 3;
+
+  struct quaternion
+  {
+      double x;
+      double y;
+      double z;
+      double w;
+  };
+
   SetTargetPosition() : Node("set_target_position")
   {
     // Initialize other components
     RCLCPP_INFO(this->get_logger(), "Initializing TargetMoveIt2Control.");
+    // initialize a subscriber:
+    target_pos_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
+      "target_pose", 10, std::bind(&SetTargetPosition::moveToTargetPose, this, std::placeholders::_1)
+    );
+
+    target_ang_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
+      "target_angles", 10, std::bind(&SetTargetPosition::moveToTargetAngles, this, std::placeholders::_1)
+    );
   }
 
   void initialize()
@@ -18,95 +39,168 @@ public:
     move_group_interface_ = std::make_shared<moveit::planning_interface::MoveGroupInterface>(shared_from_this(), "arm");
     planning_scene_interface_ = std::make_shared<moveit::planning_interface::PlanningSceneInterface>();
 
-    move_group_interface_->setNumPlanningAttempts(10);  // Set maximum planning attempts to 10
-    move_group_interface_->setPlanningTime(5.0);         // Set maximum planning time per attempt to 5 seconds
+    move_group_interface_->setNumPlanningAttempts(5);  // Set maximum planning attempts to 10
+    move_group_interface_->setPlanningTime(5);         // Set maximum planning time per attempt to 10 seconds
+    move_group_interface_->allowReplanning(true);
+    
+    move_group_interface_->setGoalPositionTolerance(0.05);
+    move_group_interface_->setGoalOrientationTolerance(0.06);
     
     RCLCPP_INFO(this->get_logger(), "MoveGroupInterface and PlanningSceneInterface initialized.");
   }
 
-  bool moveToTargetPose(const geometry_msgs::msg::Pose &target_pose)
+  bool moveToTargetPose(const std_msgs::msg::Float64MultiArray &target_6dpose)
   {
+    geometry_msgs::msg::Pose target_pose;
+
+    quaternion quat = eulerToQuaternion(target_6dpose.data[3], target_6dpose.data[4], target_6dpose.data[5]);
+    target_pose.position.x = target_6dpose.data[0];
+    target_pose.position.y = target_6dpose.data[1];
+    target_pose.position.z = target_6dpose.data[2];
+    target_pose.orientation.x = quat.x;
+    target_pose.orientation.y = quat.y;
+    target_pose.orientation.z = quat.z;
+    target_pose.orientation.w = quat.w;
+
     move_group_interface_->setPoseTarget(target_pose);
-
-    bool success = (move_group_interface_->plan(my_plan_) == moveit::core::MoveItErrorCode::SUCCESS);
-    if (success)
+    // move_group_interface_->setApproximateJointValueTarget(target_pose);
+    
+    bool success = false;
+    
+    int planning_tries = 0;
+      
+    while(planning_tries <= max_tries && !success)
     {
-      RCLCPP_INFO(this->get_logger(), "Planning successful, executing the plan.");
-      move_group_interface_->execute(my_plan_);
+      success = (move_group_interface_->plan(my_plan_) == moveit::core::MoveItErrorCode::SUCCESS);
+      if (success)
+      {
+        RCLCPP_INFO(this->get_logger(), "Planning successful, executing the plan.");
 
-      geometry_msgs::msg::PoseStamped current_pose = move_group_interface_->getPoseTarget();
-      RCLCPP_INFO(this->get_logger(), "Executed! Reached to pose: position.x=%f, position.y=%f, position.z=%f, orientation.x=%f, orientation.y=%f, orientation.z=%f, orientation.w=%f" ,
-                    current_pose.pose.position.x,
-                    current_pose.pose.position.y,
-                    current_pose.pose.position.z,
-                    current_pose.pose.orientation.x,
-                    current_pose.pose.orientation.y,
-                    current_pose.pose.orientation.z,
-                    current_pose.pose.orientation.w);
-    }
-    else
-    {
-      RCLCPP_WARN(this->get_logger(), "Planning failed.");
+        moveit::core::MoveItErrorCode ecode = moveit::core::MoveItErrorCode::FAILURE;
+        
+        int execution_tries = 0;
+      
+        while(execution_tries <= max_tries && ecode != moveit::core::MoveItErrorCode::SUCCESS)
+        {
+           ecode = move_group_interface_->execute(my_plan_);
+
+           if(ecode == moveit::core::MoveItErrorCode::SUCCESS)
+           {
+              RCLCPP_INFO(this->get_logger(), "Execution sucessful!");
+              geometry_msgs::msg::PoseStamped current_pose = move_group_interface_->getPoseTarget();
+              RCLCPP_INFO(this->get_logger(), "Executed! Reached to pose: position.x=%f, position.y=%f, position.z=%f, orientation.x=%f, orientation.y=%f, orientation.z=%f, orientation.w=%f" ,
+		     current_pose.pose.position.x,
+		     current_pose.pose.position.y,
+		     current_pose.pose.position.z,
+		     current_pose.pose.orientation.x,
+		     current_pose.pose.orientation.y,
+		     current_pose.pose.orientation.z,
+		     current_pose.pose.orientation.w);
+              break;
+           }
+           else
+           {
+              RCLCPP_WARN(this->get_logger(), "Execution failed.");
+              RCLCPP_WARN(this->get_logger(), "Attempted %d...", execution_tries + 1);
+              execution_tries++;
+           }
+        }
+        
+        break;
+      }
+      else
+      {
+        RCLCPP_WARN(this->get_logger(), "Planning failed.");
+        RCLCPP_WARN(this->get_logger(), "Attempted %d...", planning_tries + 1);
+        planning_tries++;
+      }
     }
 
     return success;
   }
 
-  bool moveToTargetAngles(const std::vector<double> &target_joints)
+  bool moveToTargetAngles(const std_msgs::msg::Float64MultiArray &target_angles)
   {
+    std::vector<double> target_joints = target_angles.data;
+
     move_group_interface_->setJointValueTarget(target_joints);
 
-    bool success = (move_group_interface_->plan(my_plan_) == moveit::core::MoveItErrorCode::SUCCESS);
-    if (success)
+    bool success = false;
+    
+    int planning_tries = 0;
+      
+    while(planning_tries <= max_tries && !success)
     {
-      RCLCPP_INFO(this->get_logger(), "Planning successful, executing the plan.");
-      move_group_interface_->execute(my_plan_);
+      success = (move_group_interface_->plan(my_plan_) == moveit::core::MoveItErrorCode::SUCCESS);
+      if (success)
+      {
+        RCLCPP_INFO(this->get_logger(), "Planning successful, executing the plan.");
 
-      RCLCPP_INFO(this->get_logger(), "Executed! Reached to joint angles: 1_Joint=%f, 2_Joint=%f, 3_Joint=%f, 4_Joint=%f, 5_Joint=%f, 6_Joint=%f",
-                    target_joints[0],
-                    target_joints[1],
-                    target_joints[2],
-                    target_joints[3],
-                    target_joints[4],
-                    target_joints[5]);
-    }
-    else
-    {
-      RCLCPP_WARN(this->get_logger(), "Planning failed.");
+        moveit::core::MoveItErrorCode ecode = moveit::core::MoveItErrorCode::FAILURE;
+        
+        int execution_tries = 0;
+      
+        while(execution_tries <= max_tries && ecode != moveit::core::MoveItErrorCode::SUCCESS)
+        {
+           ecode = move_group_interface_->execute(my_plan_);
+
+           if(ecode == moveit::core::MoveItErrorCode::SUCCESS)
+           {
+              RCLCPP_INFO(this->get_logger(), "Executed! Reached to joint angles: 1_Joint=%f, 2_Joint=%f, 3_Joint=%f, 4_Joint=%f, 5_Joint=%f, 6_Joint=%f",
+                        target_joints[0],
+                        target_joints[1],
+                        target_joints[2],
+                        target_joints[3],
+                        target_joints[4],
+                        target_joints[5]);
+              break;
+           }
+           else
+           {
+              RCLCPP_WARN(this->get_logger(), "Execution failed.");
+              RCLCPP_WARN(this->get_logger(), "Attempted %d...", execution_tries + 1);
+              execution_tries++;
+           }
+        }
+        
+        break;
+      }
+      else
+      {
+        RCLCPP_WARN(this->get_logger(), "Planning failed.");
+        RCLCPP_WARN(this->get_logger(), "Attempted %d...", planning_tries + 1);
+        planning_tries++;
+      }
     }
 
     return success;
   }
 
-  void runTest()
+  quaternion eulerToQuaternion(double roll, double pitch, double yaw)
   {
-    // // set named target pose
-    // move_group_interface_->setNamedTarget("up");
-    // geometry_msgs::msg::PoseStamped named_pose = move_group_interface_->getPoseTarget();
-    
-    // // Move to named joint-space target
-    // moveToTargetPose(named_pose.pose);
-    
-    std::vector<double> target_joints = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}; // Target joint angles (radians)
-    moveToTargetAngles(target_joints);
+      quaternion quat;
 
-    geometry_msgs::msg::Pose target_pose;
-    
-    target_pose.position.x = 0.13695764541625977;
-    target_pose.position.y = -0.005238924641162157;
-    target_pose.position.z = 0.3486359715461731;
-    target_pose.orientation.x = 3.1805826438358054e-05;
-    target_pose.orientation.y = -4.311262455303222e-05;
-    target_pose.orientation.z = -3.6135115806246176e-05;
-    target_pose.orientation.w = 1;
+      double cy = std::cos(yaw * 0.5);
+      double sy = std::sin(yaw * 0.5);
+      double cr = std::cos(roll * 0.5);
+      double sr = std::sin(roll * 0.5);
+      double cp = std::cos(pitch * 0.5);
+      double sp = std::sin(pitch * 0.5);
 
-    // Plan and Execute target pose
-    moveToTargetPose(target_pose);
+      quat.w = cy * cr * cp + sy * sr * sp;
+      quat.x = cy * sr * cp - sy * cr * sp;
+      quat.y = cy * cr * sp + sy * sr * cp;
+      quat.z = sy * cr * cp - cy * sr * sp;
+
+      return quat;
   }
 
 private:
   std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_interface_;
   std::shared_ptr<moveit::planning_interface::PlanningSceneInterface> planning_scene_interface_;
+
+  rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr target_pos_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr target_ang_sub_;
 
   // Plan path
   moveit::planning_interface::MoveGroupInterface::Plan my_plan_;
@@ -119,7 +213,6 @@ int main(int argc, char **argv)
   
   // Delayed initialization
   node->initialize();
-  node->runTest();
 
   rclcpp::spin(node);
   rclcpp::shutdown();
