@@ -10,6 +10,7 @@ moveit_simple_controller_manager:
     type: FollowJointTrajectory
     action_ns: follow_joint_trajectory
     defaul: true
+    allowed_start_tolerance: 0.1
     joints:
       - 1_Joint
       - 2_Joint
