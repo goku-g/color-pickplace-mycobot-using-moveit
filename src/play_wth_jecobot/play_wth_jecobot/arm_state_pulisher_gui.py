@@ -32,6 +32,7 @@ class JointPublisher(Node):
         super().__init__('gui_joint_publisher')
         self.pub = self.create_publisher(JointState, '/joint_states', 10)
         self.timer = self.create_timer(0.05, self.publish_state)  # 20 Hz
+        
         self.angles = mc.get_angles()
         self.vel = [const_vel] * 6
 
@@ -62,6 +63,14 @@ def start_gui(node: JointPublisher):
     def send_to_robot():
         mc.send_angles(node.angles, int(const_vel))
         print("Sent to robot:", node.angles)
+        
+    def open_gripper():
+        mc.set_gripper_state(0, 1)  # Open gripper
+        print("Gripper opened!")
+    
+    def close_gripper():
+        mc.set_gripper_state(1, 1)  # Close gripper
+        print("Gripper closed!")
 
     # Create sliders
     for i, (low, high) in enumerate(joint_limits):
@@ -77,8 +86,10 @@ def start_gui(node: JointPublisher):
         sliders.append(slider)
 
     # Button to move robot
-    send_btn = tk.Button(root, text="Move Arm", command=send_to_robot)
-    send_btn.pack(pady=10)
+    grip_open_btn = tk.Button(root, text="Open", command=open_gripper)
+    grip_open_btn.pack(pady=10)
+    grip_close_btn = tk.Button(root, text="Close", command=close_gripper)
+    grip_close_btn.pack(pady=10)
 
     root.mainloop()
 
