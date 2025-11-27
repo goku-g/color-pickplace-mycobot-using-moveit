@@ -30,9 +30,16 @@ class Joint_controller(Node):
             self.move_action_status_callback,
             10
         )
+        
+        self.move_action_status_sub = self.create_subscription(
+            Bool,
+            '/gripper_action_command',
+            self.handler_gripper_callback,
+            100
+        )
 
         self.pub = self.create_publisher(JointState, "real_joint_states", 1)
-        self.gripper_command = None
+        self.gripper_msg = False
         
         # Track move_action status
         self.move_action_status = None
@@ -41,10 +48,8 @@ class Joint_controller(Node):
         # Timer to automatically execute get_radians_cmd
         self.get_radians_timer = self.create_timer(1.0, self.auto_get_radians_callback)
 
-        self.mc = MyCobot('/dev/ttyUSB0', 1000000, thread_lock=False)
-        time.sleep(0.4)
-        self.mc.set_fresh_mode(1)
-        time.sleep(0.4)
+        self.mc = MyCobot('/dev/ttyUSB0', 1000000)
+        time.sleep(0.4)  # wait for connection to establish
 
     def listener_callback(self, msg):
         # self.get_logger().info(f"Callback called! Received joint commands: {msg.position}")
@@ -127,7 +132,13 @@ class Joint_controller(Node):
                 self.get_logger().warn(f"Failed to get 6 joint angles, attempt {attempt + 1}/5. Got: {angles}")
                 if attempt == 4:  # Last attempt
                     self.get_logger().error("Failed to get valid joint angles after 5 attempts")
-                    
+    
+    def handler_gripper_callback(self, msg):
+        """Callback for gripper command"""
+        self.gripper_msg = msg.data
+        self.get_logger().info(f"Executing Gripper Action... Action: {int(self.gripper_msg)}")
+        self.mc.set_gripper_state(int(self.gripper_msg), 2)
+               
 def main(args=None):
     rclpy.init(args=args)
     joint_controller = Joint_controller()
