@@ -3,12 +3,13 @@
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include <geometry_msgs/msg/pose.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include <cmath>
 
 class SetTargetPosition : public rclcpp::Node
 {
 public:
-  int max_tries = 3;
+  int max_tries = 2;
 
   struct quaternion
   {
@@ -37,6 +38,10 @@ public:
 
     target_ang_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
       "target_angles", 10, std::bind(&SetTargetPosition::moveToTargetAngles, this, std::placeholders::_1)
+    );
+
+    status_publisher_ = this->create_publisher<std_msgs::msg::Bool>(
+            "/arm_execution_status", 10
     );
   }
 
@@ -121,6 +126,7 @@ public:
       }
     }
 
+    publish_status(success);
     return success;
   }
 
@@ -197,6 +203,7 @@ public:
       }
     }
 
+    publish_status(success);
     return success;
   }
 
@@ -257,6 +264,7 @@ public:
       }
     }
 
+    publish_status(success);
     return success;
   }
 
@@ -314,6 +322,7 @@ public:
       }
     }
 
+    publish_status(success);
     return success;
   }
 
@@ -336,6 +345,16 @@ public:
       return quat;
   }
 
+  void publish_status(bool status)
+  {
+      auto message = std_msgs::msg::Bool();
+      message.data = status;
+      status_publisher_->publish(message);
+      
+      RCLCPP_INFO(this->get_logger(), "Published arm status: %s", 
+                  status ? "TRUE (completed)" : "FALSE (in progress)");
+  }
+
 private:
   std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_interface_;
   std::shared_ptr<moveit::planning_interface::PlanningSceneInterface> planning_scene_interface_;
@@ -344,6 +363,8 @@ private:
   rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr target_pos_xyz_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr target_car_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr target_ang_sub_;
+
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr status_publisher_;
 
   // Plan path
   moveit::planning_interface::MoveGroupInterface::Plan my_plan_;
