@@ -20,6 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'poses_from_contours_node = vision_pipline_pkg.poses_from_contours:main',
         ],
     },
 )
