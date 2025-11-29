@@ -85,6 +85,7 @@ public:
       if (success)
       {
         RCLCPP_INFO(this->get_logger(), "Planning successful, executing the plan.");
+        rclcpp::sleep_for(std::chrono::milliseconds(1000));
 
         moveit::core::MoveItErrorCode ecode = moveit::core::MoveItErrorCode::FAILURE;
         
@@ -162,6 +163,7 @@ public:
       if (success)
       {
         RCLCPP_INFO(this->get_logger(), "Planning successful, executing the plan.");
+        rclcpp::sleep_for(std::chrono::milliseconds(1000));
 
         moveit::core::MoveItErrorCode ecode = moveit::core::MoveItErrorCode::FAILURE;
         
@@ -169,6 +171,17 @@ public:
       
         while(execution_tries <= max_tries && ecode != moveit::core::MoveItErrorCode::SUCCESS)
         {
+           // how to print the whole trajectory for debugging in ros info?
+           RCLCPP_INFO(this->get_logger(), "Planned trajectory has %ld points.", my_plan_.trajectory_.joint_trajectory.points.size());
+           for (size_t i = 0; i < my_plan_.trajectory_.joint_trajectory.points.size(); ++i)
+           {
+               RCLCPP_INFO(this->get_logger(), "Point %ld: positions =", i);
+               for (size_t j = 0; j < my_plan_.trajectory_.joint_trajectory.points[i].positions.size(); ++j)
+               {
+                   RCLCPP_INFO(this->get_logger(), "  Joint %ld: %f", j, my_plan_.trajectory_.joint_trajectory.points[i].positions[j]);
+               }
+           }
+
            ecode = move_group_interface_->execute(my_plan_);
 
            if(ecode == moveit::core::MoveItErrorCode::SUCCESS)
@@ -223,6 +236,7 @@ public:
       if (success)
       {
         RCLCPP_INFO(this->get_logger(), "Planning successful, executing the plan.");
+        rclcpp::sleep_for(std::chrono::milliseconds(1000));
 
         moveit::core::MoveItErrorCode ecode = moveit::core::MoveItErrorCode::FAILURE;
         
@@ -284,7 +298,8 @@ public:
       if (success)
       {
         RCLCPP_INFO(this->get_logger(), "Planning successful, executing the plan.");
-
+        rclcpp::sleep_for(std::chrono::milliseconds(1000));
+        
         moveit::core::MoveItErrorCode ecode = moveit::core::MoveItErrorCode::FAILURE;
         
         int execution_tries = 0;
