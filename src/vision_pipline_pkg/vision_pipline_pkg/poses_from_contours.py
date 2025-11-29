@@ -18,6 +18,7 @@ DIST_COEFFS = np.array([-6.20667027e-02,  2.47197572e+00, -1.85292544e-04,  3.19
 # fixed euler angles (in radians)
 PLANE_EULER_ANGLES = (0.0, 1.57, -0.85)  # roll, pitch, yaw (euler zyx convention)
 
+BOUNDARY = [0.05, 0.3, -0.3, 0.3, 0.0, 0.3]
 
 class PosesFromContours(Node):
     def __init__(self):
@@ -26,11 +27,13 @@ class PosesFromContours(Node):
         self.selected_hue_ = 0
         self.selecting_color_ = True
         self.hover_color_ = ()
+        
+        self.ready_to_start_ = False
         self._poses = []  # list to hold detected object poses
         
         # Initialize any publishers or parameters here if needed
         self._poses_publisher_ = self.create_publisher(Float64MultiArray, 'detected_object_pose', 10)
-        self._timer_poses_pub_ = self.create_timer(0.5, self.publish_detected_poses)  # 2 Hz
+        self._timer_poses_pub_ = self.create_timer(0.5, self.publishDetectedPoses)  # 2 Hz
         
         self.cap = cv2.VideoCapture(0)
         
@@ -42,23 +45,25 @@ class PosesFromContours(Node):
             cv2.namedWindow('Trackbars')
             cv2.createTrackbar('Lower-Hue', 'Trackbars', 2, 179, self.trackbarCallback)
             cv2.createTrackbar('Upper-Hue', 'Trackbars', 3, 179, self.trackbarCallback)
+            cv2.setMouseCallback('Trackbars', self.startButtonCallback)
             
             self._process_timer_ = self.create_timer(0.03, self.processingLoop)  # ~30 Hz
         else:
             self.get_logger().error("Failed to initialize camera.")
 
-    def publish_detected_poses(self):
+    def publishDetectedPoses(self):
         # if there is any values in the poses list, publish them
-        if len(self._poses) > 0:
-            msg = Float64MultiArray()
-            # flatten the list of poses
-            flattened_poses = [item for item in self._poses[0]]  # assuming we want to publish the first set of poses
-            msg.data = flattened_poses
-            self._poses_publisher_.publish(msg)
+        if self.ready_to_start_:
+            if len(self._poses) > 0:
+                msg = Float64MultiArray()
+                # flatten the list of poses
+                flattened_poses = [item for item in self._poses[0]]  # assuming we want to publish the first set of poses
+                msg.data = flattened_poses
+                self._poses_publisher_.publish(msg)
         else:
-            self.get_logger().info("No poses detected to publish.")
+            self.get_logger().info("Hit the 'Start' button to publish detected poses.")
         
-    def pixel_to_cm(self, pixel_x, pixel_y, z_cam=0, z_plane=0):
+    def pixel2cm(self, pixel_x, pixel_y, z_cam=0, z_plane=0):
         """
         Convert pixel coordinates to cm using known field of view dimensions.
         
@@ -89,8 +94,16 @@ class PosesFromContours(Node):
         y_cm = (y_cm - 0.500) * 1.5142
         
         return x_cm, y_cm
+        
+    def isWithinBoundary(self, pose_2d):
+        x, y = pose_2d[0], pose_2d[1]
+        
+        within = (BOUNDARY[0] <= x <= BOUNDARY[1] and
+                  BOUNDARY[2] <= y <= BOUNDARY[3])
+        
+        return within
 
-    def getColorCuntours(self, hue, rgb_image):
+    def getColorContours(self, hue, rgb_image):
         hsv = cv2.cvtColor(rgb_image, cv2.COLOR_BGR2HSV)
         
         # Define range of color in HSV 
@@ -117,12 +130,11 @@ class PosesFromContours(Node):
         for cnt in contours:
             area = cv2.contourArea(cnt)
             if 300 < area < 10000:
-                real_contours.append(cnt)
-                
                 M = cv2.moments(cnt)
                 if M["m00"] != 0:
                     cX = int(M["m10"] / M["m00"])
                     cY = int(M["m01"] / M["m00"])
+                    real_contours.append(cnt)
                     contour_centers.append((cX, cY))
         
         return real_contours, contour_centers
@@ -140,6 +152,10 @@ class PosesFromContours(Node):
 
     def trackbarCallback(self, x):
         pass
+    
+    def startButtonCallback(self, event, x, y, flags, frame):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            self.ready_to_start_ = True
 
     def processingLoop(self):
         ret, color_image = self.cap.read()
@@ -167,26 +183,24 @@ class PosesFromContours(Node):
             except:
                 pass
         
-        cuntours, centroids = self.getColorCuntours(self.selected_hue_, color_image)
+        contours, centroids = self.getColorContours(self.selected_hue_, color_image)
         
         self._poses = []
-        for cnt, center in zip(cuntours, centroids):
-            cv2.drawContours(color_image, [cnt], -1, (0, 255, 0), 2)
-            cv2.circle(color_image, center, 3, (255, 255, 255), -1)
-            
+        for cnt, center in zip(contours, centroids):            
             z_position = 62  # cm (height of camera from table)
-            x_cm, y_cm = self.pixel_to_cm(center[0], center[1], z_position, 1)
+            x_cm, y_cm = self.pixel2cm(center[0], center[1], z_position, 1)
             from_arm_x = -(x_cm + 2.1)  # adjust as per robot arm base offset
             from_arm_y = -(y_cm - 17.4)  # adjust as per robot arm base offset
             
-            # matching with robot axes and convert them to standard units (meters and radians)
-            self._poses.append((from_arm_y/100, from_arm_x/100, 0.1275, PLANE_EULER_ANGLES[0], PLANE_EULER_ANGLES[1], PLANE_EULER_ANGLES[2]))
+            if self.isWithinBoundary((from_arm_y/100, from_arm_x/100)):
+                cv2.drawContours(color_image, [cnt], -1, (0, 255, 0), 2)
+                cv2.circle(color_image, center, 3, (255, 255, 255), -1)
+                # matching with robot axes and convert them to standard units (meters and radians)
+                self._poses.append((from_arm_y/100, from_arm_x/100, 0.1275, PLANE_EULER_ANGLES[0], PLANE_EULER_ANGLES[1], PLANE_EULER_ANGLES[2]))
             
-            cv2.putText(color_image, f"({from_arm_x:.1f} cm, {center[0]}, {from_arm_y:.1f} cm, {center[1]})", 
+                cv2.putText(color_image, f"({from_arm_x:.1f} cm, {center[0]}, {from_arm_y:.1f} cm, {center[1]})", 
                         (center[0] + 10, center[1] + 10), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-        
-        # Now can publish the self._poses to ROS topic or use as needed
 
         # this returns False if 'q' or esc is pressed
         cv2.namedWindow("Final")
