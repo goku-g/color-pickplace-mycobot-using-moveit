@@ -1,39 +1,54 @@
-# JetCobot Workspace
-
+readme.md
 ## Requirements
+### System
 - OS: Ubuntu 22.04 LTS
 - ROS 2: Humble Hawksbill
-
-This workspace targets Ubuntu 22.04 and ROS 2 Humble. Use these versions when building or running the project.
-
+### Programs
 - Python 3 (system default)
-- Dependencies (examples — install as needed):
+  - Dependencies (examples — install as needed):
     - pymycobot
-        ```sh
+	```
         python3 -m pip install pymycobot
-        ```
+    ```
+    - OpenCV
+	```sh
+	    python3 -m pip install opencv-python
+	```
 
-## Packages
-This workspace contains three main packages:
-
-- [play_wth_jecobot](src/play_wth_jecobot) (Python helpers / GUI)
-- [hardware_jetcobot_pkg](src/hardware_jetcobot_pkg) (hardware bridge & ros2_control plugin and nodes)
-- [moveit_jetcobot_pkg](src/moveit_jetcobot_pkg) (MoveIt configuration and planners)
-- [jetcobot_urdf](src/jetcobot_urdf) (Robot urdf and rviz visualization display)
-
-## Notes
-The C++ planner helper (can plan the path according to the target pose or angles) which can be found on [.../src/move_to_target_pose.cpp](src/moveit_jetcobot_pkg/src/move_to_target_pose.cpp)
-
-- Topics
-    - /target_pose
-    - /target_angles
-- Msg type (for both)
-    - std_msgs/msg/Float64MultiArray (explicitly 6 float data)
-
-Test commands:
-```sh 
-ros2 topic pub /target_pose std_msgs/msg/Float64MultiArray "{layout: {}, data: [0.10, -0.16, 0.27, 0, -0.1, 0]}" --once
-```
+## Executing the Program
+### Step 1
+Launching the MoveIt visualization or hardware bridge. If you have the hardware and want to run with hardware bridge then you can run:
 ```sh
-ros2 topic pub /target_angles std_msgs/msg/Float64MultiArray "{layout: {}, data: [0, 0, 0, 0, 0, 0]}" --once
+    ros2 launch hardware_jetcobot_pkg jetcobot_moveit_hardware.launch.py
 ```
+or if you just want to run in the simulation (but with the real camera and position) then you can go with the demo launch from moveit setup:
+
+```sh
+    ros2 launch moveit_jetcobot_pkg demo.launch.py
+```
+
+### Step 2
+Running the node that plan and execute the joint states based on the provided end-effector Pose:
+```sh
+    ros2 run moveit_jetcobot_pkg move_to_target_pose
+```
+
+### Step 3
+The **Main** controller that handles all the intermidiate operations like get the Pose from vision pipeline and follow the whole state machine for completing the pick and place operations for that detected object is Pick and Place Coordinator. This can be run as:
+```sh
+    ros2 run intermidiate_controller_pkg pick_place_coordinator
+```
+
+### Step 4
+Finally for the vision pipeline, which is responsible for detecting the selected color, creating counter, calculate and publish the actual Pose of the detected colored object, you can follow command:
+```sh
+ros2 run vision_pipeline_pkg poses_from_countours_node
+```
+This will allow to select the desired color from the image and provide the trackbar for adjust the upper and lower hue threshold values for the selected color. As you can see in this image.
+
+![image](assets/color_selection.png)
+
+After selecting the color and setting the threshold offset, you asked to click the **Start** button. The button is the black rectengle on the trackbar window. This will start the vision pipeline for detecting and publishing the Pose.
+
+## Demonstration Video
+[Demo Video](https://umanitoba-my.sharepoint.com/:v:/g/personal/baskotag_myumanitoba_ca/EezrGErAjtNAtMbKe6NVBvsBJIdItO_THLsjkkRXoKgmOA?nav=eyJyZWZlcnJhbEluZm8iOnsicmVmZXJyYWxBcHAiOiJPbmVEcml2ZUZvckJ1c2luZXNzIiwicmVmZXJyYWxBcHBQbGF0Zm9ybSI6IldlYiIsInJlZmVycmFsTW9kZSI6InZpZXciLCJyZWZlcnJhbFZpZXciOiJNeUZpbGVzTGlua0NvcHkifX0&e=YI5zGR)
