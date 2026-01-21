@@ -1,4 +1,3 @@
-readme.md
 ## Requirements
 ### System
 - OS: Ubuntu 22.04 LTS
