@@ -15,7 +15,7 @@ class JointStateSwitcher(Node):
         # Subscriber setup
         self.fake_joint_states_sub = self.create_subscription(
             JointState,
-            'joint_states',
+            'joint_states_raw',
             self.fake_joint_states_callback,
             1
         )

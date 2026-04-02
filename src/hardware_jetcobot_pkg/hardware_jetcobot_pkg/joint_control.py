@@ -10,7 +10,7 @@ from pymycobot.mycobot import MyCobot
 class Joint_controller(Node):
     def __init__(self):
         super().__init__("control_slider")
-        self.subscription = self.create_subscription(
+        self.state_sub = self.create_subscription(
             JointState,
             # "joint_commands",
             "joint_states",
