@@ -15,14 +15,14 @@ class JointStateSwitcher(Node):
         # Subscriber setup
         self.fake_joint_states_sub = self.create_subscription(
             JointState,
-            'joint_states_raw',
+            '/arm/joint_states_raw',
             self.fake_joint_states_callback,
             1
         )
         
         self.real_joint_states_sub = self.create_subscription(
             JointState,
-            'real_joint_states',
+            '/arm/real_joint_states',
             self.real_joint_states_callback,
             1
         )
@@ -43,7 +43,7 @@ class JointStateSwitcher(Node):
         
         self.get_angles_cmd_pub = self.create_publisher(
             Bool,
-            'get_angles_cmd',
+            '/arm/get_angles_cmd',
             1
         )
         
@@ -53,8 +53,8 @@ class JointStateSwitcher(Node):
         self.current_status = None
         self.using_real_states = True
         
-        # 40Hz timer (runs every 0.05s)
-        self.timer = self.create_timer(0.05, self.timer_callback)
+        # 40Hz timer (runs every 0.025s)
+        self.timer = self.create_timer(0.025, self.timer_callback)
         
         self.get_logger().info('Joint State Switcher node initialized')
     

@@ -12,14 +12,13 @@ class Joint_controller(Node):
         super().__init__("control_slider")
         self.state_sub = self.create_subscription(
             JointState,
-            # "joint_commands",
-            "joint_states",
+            'joint_states',
             self.listener_callback,
             1
         )
         self.sub_get_angles_cmd = self.create_subscription(
             Bool,
-            "get_angles_cmd",
+            '/arm/get_angles_cmd',
             self.get_radians_cmd_callback,
             1
         )
@@ -33,12 +32,26 @@ class Joint_controller(Node):
         
         self.move_action_status_sub = self.create_subscription(
             Bool,
-            '/gripper_action_command',
+            '/arm/gripper_action_command',
             self.handler_gripper_callback,
             100
         )
 
-        self.pub = self.create_publisher(JointState, "real_joint_states", 1)
+        self.pub = self.create_publisher(
+            JointState, 
+            '/arm/real_joint_states', 
+            1
+        )
+        
+        self.joint_map = {
+            "1_Joint": 0,
+            "2_Joint": 1,
+            "3_Joint": 2,
+            "4_Joint": 3,
+            "5_Joint": 4,
+            "6_Joint": 5
+        }
+        
         self.gripper_msg = False
         
         # Track move_action status
@@ -61,13 +74,13 @@ class Joint_controller(Node):
             
         # MyCobot joint order: 1, 4, 2, 3, 5, 6
         # ROS joint order: 1, 2, 3, 4, 5, 6
-        data_list = [0] * 6
-        index_map = [0, 2, 3, 1, 4, 5]
-        i = 0
-        for _, value in enumerate(msg.position):
-            radians_to_angles = round(math.degrees(value), 2)
-            data_list[index_map[i]] = radians_to_angles
-            i += 1
+        # Now it solved!
+        data_list = [0] * len(self.joint_map)
+        
+        for name, value in zip(msg.name, msg.position):
+            if name in self.joint_map:
+                radians_to_angles = round(math.degrees(value), 2)
+                data_list[self.joint_map[name]] = radians_to_angles
 
         # self.get_logger().info(f"Sending angles to MyCobot: {data_list}")
         self.mc.send_angles(data_list, 50)
@@ -110,18 +123,10 @@ class Joint_controller(Node):
             # Check if angles exist, are a list, and contain all 6 values
             if angles is not None and isinstance(angles, list):
                 # self.get_logger().info(f"Real robot angles: {angles}")
-                # Convert angles to radians
-                index_map = [0, 2, 3, 1, 4, 5]
-                joint_state.position = [math.radians(angles[i]) for i in index_map]
+                # Convert angles to radians and publish
+                joint_state.position = [math.radians(angles[i]) for i in self.joint_map.values()]
                 joint_state.header.stamp = self.get_clock().now().to_msg()
-                joint_state.name = [
-                    "1_Joint",
-                    "3_Joint",
-                    "4_Joint",
-                    "2_Joint",
-                    "5_Joint",
-                    "6_Joint",
-                ]
+                joint_state.name = list(self.joint_map.keys())
                 joint_state.velocity = [0.0] * len(joint_state.name)
                 joint_state.effort = [0.0] * len(joint_state.name)
                 self.pub.publish(joint_state)
